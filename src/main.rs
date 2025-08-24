@@ -1,6 +1,6 @@
 mod features;
 mod handlers;
-use crate::handlers::{consume, length, overview, publish};
+use crate::handlers::queue::{consume, length, overview, publish};
 use actix_web::{
     App, HttpServer,
     middleware::Logger,

@@ -6,8 +6,8 @@ use actix_web::{
 use features::persistence::save_queue;
 use std::collections::HashMap;
 
-#[post("/publish/{topic}")]
-async fn publish(
+#[post("/queue/publish/{topic}")]
+pub async fn publish(
     data: web::Data<PigeonState>,
     path: web::Path<String>,
     body: String,
@@ -23,8 +23,8 @@ async fn publish(
     }
 }
 
-#[post("/consume/{topic}")]
-async fn consume(data: web::Data<PigeonState>, path: web::Path<String>) -> impl Responder {
+#[post("/queue/consume/{topic}")]
+pub async fn consume(data: web::Data<PigeonState>, path: web::Path<String>) -> impl Responder {
     let topic = path.into_inner();
     let mut queues = data.queues.lock().unwrap();
 
@@ -43,8 +43,8 @@ async fn consume(data: web::Data<PigeonState>, path: web::Path<String>) -> impl 
     HttpResponse::NotFound().body(String::new())
 }
 
-#[get("/length/{topic}")]
-async fn length(data: web::Data<PigeonState>, path: web::Path<String>) -> impl Responder {
+#[get("/queue/length/{topic}")]
+pub async fn length(data: web::Data<PigeonState>, path: web::Path<String>) -> impl Responder {
     let topic = path.into_inner();
     let queues = data.queues.lock().unwrap();
 
@@ -55,8 +55,8 @@ async fn length(data: web::Data<PigeonState>, path: web::Path<String>) -> impl R
     HttpResponse::Ok().body("0")
 }
 
-#[get("/topics")]
-async fn overview(data: web::Data<PigeonState>) -> impl Responder {
+#[get("/queue/topics")]
+pub async fn overview(data: web::Data<PigeonState>) -> impl Responder {
     let queues = data.queues.lock().unwrap();
 
     let lengths: HashMap<String, usize> = queues
