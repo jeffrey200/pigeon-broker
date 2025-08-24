@@ -10,7 +10,9 @@ use std::{
     collections::{HashMap, VecDeque},
     str,
     sync::Mutex,
+    time::Duration,
 };
+use tokio::time::interval;
 
 struct PigeonState {
     queues: Mutex<HashMap<String, VecDeque<String>>>,
@@ -44,7 +46,6 @@ async fn consume(data: web::Data<PigeonState>, path: web::Path<String>) -> impl 
             if queue.is_empty() {
                 queues.remove(&topic);
                 let _ = data.db.remove(&topic);
-                let _ = data.db.flush();
             } else {
                 let _ = save_queue(&data.db, &topic, queue);
             }
@@ -93,8 +94,21 @@ fn save_queue(db: &Db, topic: &str, queue: &VecDeque<String>) -> sled::Result<()
         .collect::<Vec<_>>()
         .join("\n");
     db.insert(topic, value.as_bytes())?;
-    db.flush()?;
     Ok(())
+}
+
+async fn periodic_flush(state: web::Data<PigeonState>) {
+    let mut interval = interval(Duration::from_secs(5));
+    loop {
+        interval.tick().await;
+        let queues = state.queues.lock().unwrap();
+
+        for (topic, queue) in queues.iter() {
+            if let Err(e) = save_queue(&state.db, topic, queue) {
+                eprintln!("Failed to flush {}: {:?}", topic, e);
+            }
+        }
+    }
 }
 
 #[actix_web::main]
@@ -108,6 +122,11 @@ async fn main() -> std::io::Result<()> {
     let state = web::Data::new(PigeonState {
         queues: Mutex::new(load_queue(&db)),
         db,
+    });
+
+    let flush_state = state.clone();
+    tokio::spawn(async move {
+        periodic_flush(flush_state).await;
     });
 
     HttpServer::new(move || {
