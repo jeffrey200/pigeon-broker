@@ -1,115 +1,23 @@
+mod features;
+mod handlers;
+use crate::handlers::{consume, length, publish};
 use actix_web::{
-    App, HttpResponse, HttpServer, Responder, get,
+    App, HttpServer,
     middleware::Logger,
-    post,
     web::{self},
 };
 use env_logger::Env;
+use features::persistence::{load_queue, periodic_flush};
 use sled::Db;
 use std::{
     collections::{HashMap, VecDeque},
     path::PathBuf,
-    str,
     sync::Mutex,
-    time::Duration,
 };
-use tokio::time::interval;
 
 struct PigeonState {
     queues: Mutex<HashMap<String, VecDeque<String>>>,
     db: Db,
-}
-
-#[post("/publish/{topic}")]
-async fn publish(
-    data: web::Data<PigeonState>,
-    path: web::Path<String>,
-    body: String,
-) -> impl Responder {
-    let topic = path.into_inner();
-    let mut queues = data.queues.lock().unwrap();
-    let queue = queues.entry(topic.clone()).or_default();
-    queue.push_back(body);
-
-    match save_queue(&data.db, &topic, queue) {
-        Ok(_) => HttpResponse::Ok().body("Successfully published"),
-        Err(_) => HttpResponse::InternalServerError().body("Failed to persist"),
-    }
-}
-
-#[post("/consume/{topic}")]
-async fn consume(data: web::Data<PigeonState>, path: web::Path<String>) -> impl Responder {
-    let topic = path.into_inner();
-    let mut queues = data.queues.lock().unwrap();
-
-    if let Some(queue) = queues.get_mut(&topic) {
-        if let Some(message) = queue.pop_front() {
-            if queue.is_empty() {
-                queues.remove(&topic);
-                let _ = data.db.remove(&topic);
-            } else {
-                let _ = save_queue(&data.db, &topic, queue);
-            }
-            return HttpResponse::Ok().body(message);
-        }
-    }
-
-    HttpResponse::NotFound().body(String::new())
-}
-
-#[get("/length/{topic}")]
-async fn length(data: web::Data<PigeonState>, path: web::Path<String>) -> impl Responder {
-    let topic = path.into_inner();
-    let queues = data.queues.lock().unwrap();
-
-    if let Some(queue) = queues.get(&topic) {
-        return HttpResponse::Ok().body(queue.len().to_string());
-    }
-
-    HttpResponse::Ok().body("0")
-}
-
-fn load_queue(db: &Db) -> HashMap<String, VecDeque<String>> {
-    let mut queues = HashMap::new();
-    for result in db.iter() {
-        if let Ok((key, value)) = result {
-            if let Ok(topic) = str::from_utf8(&key) {
-                if let Ok(messages_str) = str::from_utf8(&value) {
-                    let messages = messages_str
-                        .split('\n')
-                        .filter(|s| !s.is_empty())
-                        .map(|s| s.to_string())
-                        .collect();
-                    queues.insert(topic.to_string(), messages);
-                }
-            }
-        }
-    }
-    queues
-}
-
-fn save_queue(db: &Db, topic: &str, queue: &VecDeque<String>) -> sled::Result<()> {
-    let value = queue
-        .iter()
-        .map(|s| s.as_str())
-        .collect::<Vec<_>>()
-        .join("\n");
-    db.insert(topic, value.as_bytes())?;
-    Ok(())
-}
-
-async fn periodic_flush(state: web::Data<PigeonState>) {
-    let mut interval = interval(Duration::from_secs(5));
-    loop {
-        interval.tick().await;
-        let queues = state.queues.lock().unwrap();
-
-        for (topic, queue) in queues.iter() {
-            if let Err(e) = save_queue(&state.db, topic, queue) {
-                eprintln!("Failed to flush {}: {:?}", topic, e);
-            }
-        }
-    }
 }
 
 #[actix_web::main]
