@@ -1,6 +1,9 @@
 mod features;
 mod handlers;
-use crate::handlers::queue::{consume, length, overview, publish};
+use crate::handlers::{
+    kv_store::{kv_delete, kv_get, kv_set},
+    queue::{consume, length, overview, publish},
+};
 use actix_web::{
     App, HttpServer,
     middleware::Logger,
@@ -17,6 +20,7 @@ use std::{
 
 struct PigeonState {
     queues: Mutex<HashMap<String, VecDeque<String>>>,
+    keyvalues: Mutex<HashMap<String, String>>,
     db: Db,
 }
 
@@ -31,12 +35,13 @@ async fn main() -> std::io::Result<()> {
         .parent()
         .expect("Executable does not have a directory");
     let mut db_path = PathBuf::from(exe_dir);
-    db_path.push("queue_db");
+    db_path.push("pigeon_db");
 
     let db = sled::open(db_path).expect("Failed to open sled DB");
 
     let state = web::Data::new(PigeonState {
         queues: Mutex::new(load_queue(&db)),
+        keyvalues: Mutex::new(HashMap::new()),
         db,
     });
 
@@ -53,6 +58,9 @@ async fn main() -> std::io::Result<()> {
             .service(consume)
             .service(length)
             .service(overview)
+            .service(kv_set)
+            .service(kv_get)
+            .service(kv_delete)
     })
     .bind("127.0.0.1:8080")?
     .run()
