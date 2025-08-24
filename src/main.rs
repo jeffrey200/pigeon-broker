@@ -1,6 +1,6 @@
 mod features;
 mod handlers;
-use crate::handlers::{consume, length, publish};
+use crate::handlers::{consume, length, overview, publish};
 use actix_web::{
     App, HttpServer,
     middleware::Logger,
@@ -52,6 +52,7 @@ async fn main() -> std::io::Result<()> {
             .service(publish)
             .service(consume)
             .service(length)
+            .service(overview)
     })
     .bind("127.0.0.1:8080")?
     .run()

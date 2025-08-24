@@ -4,6 +4,7 @@ use actix_web::{
     web::{self},
 };
 use features::persistence::save_queue;
+use std::collections::HashMap;
 
 #[post("/publish/{topic}")]
 async fn publish(
@@ -52,4 +53,16 @@ async fn length(data: web::Data<PigeonState>, path: web::Path<String>) -> impl R
     }
 
     HttpResponse::Ok().body("0")
+}
+
+#[get("/topics")]
+async fn overview(data: web::Data<PigeonState>) -> impl Responder {
+    let queues = data.queues.lock().unwrap();
+
+    let lengths: HashMap<String, usize> = queues
+        .iter()
+        .map(|(key, queue)| (key.clone(), queue.len()))
+        .collect();
+
+    HttpResponse::Ok().json(lengths)
 }
