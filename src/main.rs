@@ -8,6 +8,7 @@ use env_logger::Env;
 use sled::Db;
 use std::{
     collections::{HashMap, VecDeque},
+    path::PathBuf,
     str,
     sync::Mutex,
     time::Duration,
@@ -117,7 +118,14 @@ async fn main() -> std::io::Result<()> {
 
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
-    let db = sled::open("queue_db").expect("Failed to open sled DB");
+    let exe_path = std::env::current_exe()?;
+    let exe_dir = exe_path
+        .parent()
+        .expect("Executable does not have a directory");
+    let mut db_path = PathBuf::from(exe_dir);
+    db_path.push("queue_db");
+
+    let db = sled::open(db_path).expect("Failed to open sled DB");
 
     let state = web::Data::new(PigeonState {
         queues: Mutex::new(load_queue(&db)),
