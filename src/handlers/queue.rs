@@ -32,7 +32,8 @@ pub async fn consume(data: web::Data<PigeonState>, path: web::Path<String>) -> i
         if let Some(message) = queue.pop_front() {
             if queue.is_empty() {
                 queues.remove(&topic);
-                let _ = data.db.remove(&topic);
+                let db_key = format!("queue_{}", topic);
+                let _ = data.db.remove(db_key);
             } else {
                 let _ = save_queue(&data.db, &topic, queue);
             }

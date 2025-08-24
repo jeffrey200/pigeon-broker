@@ -6,25 +6,46 @@ use std::{
     str,
     time::Duration,
 };
-use tokio::time::interval;
 
 pub fn load_queue(db: &Db) -> HashMap<String, VecDeque<String>> {
     let mut queues = HashMap::new();
     for result in db.iter() {
         if let Ok((key, value)) = result {
             if let Ok(topic) = str::from_utf8(&key) {
-                if let Ok(messages_str) = str::from_utf8(&value) {
-                    let messages = messages_str
-                        .split('\n')
-                        .filter(|s| !s.is_empty())
-                        .map(|s| s.to_string())
-                        .collect();
-                    queues.insert(topic.to_string(), messages);
+                if topic.starts_with("queue_") {
+                    if let Ok(messages_str) = str::from_utf8(&value) {
+                        let messages = messages_str
+                            .split('\n')
+                            .filter(|s| !s.is_empty())
+                            .map(|s| s.to_string())
+                            .collect();
+                        let topic_name = topic.trim_start_matches("queue_").to_string();
+                        queues.insert(topic_name, messages);
+                    }
                 }
             }
         }
     }
     queues
+}
+
+pub fn load_keyvalue(db: &Db) -> HashMap<String, String> {
+    let mut keyvalues = HashMap::new();
+    for result in db.iter() {
+        if let Ok((key, value)) = result {
+            if let Ok(key_str) = str::from_utf8(&key) {
+                if key_str.starts_with("kv_") {
+                    if let Ok(value_str) = str::from_utf8(&value) {
+                        keyvalues.insert(
+                            key_str.trim_start_matches("kv_").to_string(),
+                            value_str.to_string(),
+                        );
+                    }
+                }
+            }
+        }
+    }
+    keyvalues
 }
 
 pub fn save_queue(db: &Db, topic: &str, queue: &VecDeque<String>) -> sled::Result<()> {
@@ -33,19 +54,38 @@ pub fn save_queue(db: &Db, topic: &str, queue: &VecDeque<String>) -> sled::Resul
         .map(|s| s.as_str())
         .collect::<Vec<_>>()
         .join("\n");
-    db.insert(topic, value.as_bytes())?;
+    let key = format!("queue_{}", topic);
+    db.insert(key, value.as_bytes())?;
+    Ok(())
+}
+
+pub fn save_keyvalue(db: &Db, key: &str, value: &str) -> sled::Result<()> {
+    let db_key = format!("kv_{}", key);
+    db.insert(db_key, value.as_bytes())?;
     Ok(())
 }
 
 pub async fn periodic_flush(state: web::Data<PigeonState>) {
-    let mut interval = interval(Duration::from_secs(5));
+    let mut interval = tokio::time::interval(Duration::from_secs(5));
+
     loop {
         interval.tick().await;
-        let queues = state.queues.lock().unwrap();
 
-        for (topic, queue) in queues.iter() {
+        let (queues_snapshot, keyvalues_snapshot) = {
+            let queues = state.queues.lock().unwrap();
+            let keyvalues = state.keyvalues.lock().unwrap();
+            (queues.clone(), keyvalues.clone())
+        };
+
+        for (topic, queue) in queues_snapshot.iter() {
             if let Err(e) = save_queue(&state.db, topic, queue) {
-                eprintln!("Failed to flush {}: {:?}", topic, e);
+                eprintln!("Failed to flush queue {}: {:?}", topic, e);
+            }
+        }
+
+        for (key, value) in keyvalues_snapshot.iter() {
+            if let Err(e) = save_keyvalue(&state.db, key, value) {
+                eprintln!("Failed to flush keyvalue {}: {:?}", key, e);
             }
         }
     }

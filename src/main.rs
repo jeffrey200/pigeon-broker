@@ -1,9 +1,9 @@
 mod features;
 mod handlers;
-use crate::handlers::{
+use crate::{features::persistence::load_keyvalue, handlers::{
     kv_store::{kv_delete, kv_get, kv_set},
     queue::{consume, length, overview, publish},
-};
+}};
 use actix_web::{
     App, HttpServer,
     middleware::Logger,
@@ -41,7 +41,7 @@ async fn main() -> std::io::Result<()> {
 
     let state = web::Data::new(PigeonState {
         queues: Mutex::new(load_queue(&db)),
-        keyvalues: Mutex::new(HashMap::new()),
+        keyvalues: Mutex::new(load_keyvalue(&db)),
         db,
     });
 
