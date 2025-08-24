@@ -13,27 +13,27 @@ Current features:
 
 ## Push to queue
 
-    POST /queue/publish/{topic}
+    POST /queues/{queue}/publish
 
 - `200 OK` - Successfully published
 - `500 Internal Server Error` - Failed to persist
 
 ## Consume from queue
 
-    POST /queue/consume/{topic}
+    POST /queues/{queue}/consume
 
 - `200 OK` - Message from queue
 - `404 Not Found`
 
 ## Get queue length
 
-    GET /queue/length/{topic}
+    GET /queues/{queue}/length
 
 - `200 OK` - Length of queue
 
 ## Get queues overview
 
-    GET /queue/topics
+    GET /queues
 
 - `200 OK` - JSON Objects of queues
 
