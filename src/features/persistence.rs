@@ -71,22 +71,8 @@ pub async fn periodic_flush(state: web::Data<PigeonState>) {
     loop {
         interval.tick().await;
 
-        let (queues_snapshot, keyvalues_snapshot) = {
-            let queues = state.queues.lock().unwrap();
-            let keyvalues = state.keyvalues.lock().unwrap();
-            (queues.clone(), keyvalues.clone())
-        };
-
-        for (topic, queue) in queues_snapshot.iter() {
-            if let Err(e) = save_queue(&state.db, topic, queue) {
-                eprintln!("Failed to flush queue {}: {:?}", topic, e);
-            }
-        }
-
-        for (key, value) in keyvalues_snapshot.iter() {
-            if let Err(e) = save_keyvalue(&state.db, key, value) {
-                eprintln!("Failed to flush keyvalue {}: {:?}", key, e);
-            }
+        if let Err(e) = state.db.flush() {
+            eprintln!("Failed to flush db: {:?}", e);
         }
     }
 }
