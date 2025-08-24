@@ -5,13 +5,16 @@ use actix_web::{
     web::{self},
 };
 use env_logger::Env;
+use sled::Db;
 use std::{
     collections::{HashMap, VecDeque},
+    str,
     sync::Mutex,
 };
 
 struct PigeonState {
     queues: Mutex<HashMap<String, VecDeque<String>>>,
+    db: Db,
 }
 
 #[post("/publish/{topic}")]
@@ -24,7 +27,11 @@ async fn publish(
     let mut queues = data.queues.lock().unwrap();
     let queue = queues.entry(topic.clone()).or_default();
     queue.push_back(body);
-    HttpResponse::Ok().body("Successful published")
+
+    match save_queue(&data.db, &topic, queue) {
+        Ok(_) => HttpResponse::Ok().body("Successfully published"),
+        Err(_) => HttpResponse::InternalServerError().body("Failed to persist"),
+    }
 }
 
 #[post("/consume/{topic}")]
@@ -36,6 +43,10 @@ async fn consume(data: web::Data<PigeonState>, path: web::Path<String>) -> impl 
         if let Some(message) = queue.pop_front() {
             if queue.is_empty() {
                 queues.remove(&topic);
+                let _ = data.db.remove(&topic);
+                let _ = data.db.flush();
+            } else {
+                let _ = save_queue(&data.db, &topic, queue);
             }
             return HttpResponse::Ok().body(message);
         }
@@ -56,14 +67,47 @@ async fn length(data: web::Data<PigeonState>, path: web::Path<String>) -> impl R
     HttpResponse::Ok().body("0")
 }
 
+fn load_queue(db: &Db) -> HashMap<String, VecDeque<String>> {
+    let mut queues = HashMap::new();
+    for result in db.iter() {
+        if let Ok((key, value)) = result {
+            if let Ok(topic) = str::from_utf8(&key) {
+                if let Ok(messages_str) = str::from_utf8(&value) {
+                    let messages = messages_str
+                        .split('\n')
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.to_string())
+                        .collect();
+                    queues.insert(topic.to_string(), messages);
+                }
+            }
+        }
+    }
+    queues
+}
+
+fn save_queue(db: &Db, topic: &str, queue: &VecDeque<String>) -> sled::Result<()> {
+    let value = queue
+        .iter()
+        .map(|s| s.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    db.insert(topic, value.as_bytes())?;
+    db.flush()?;
+    Ok(())
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     println!("Starting server on http://127.0.0.1:8080");
 
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
+    let db = sled::open("queue_db").expect("Failed to open sled DB");
+
     let state = web::Data::new(PigeonState {
-        queues: Mutex::new(HashMap::new()),
+        queues: Mutex::new(load_queue(&db)),
+        db,
     });
 
     HttpServer::new(move || {

@@ -3,7 +3,14 @@ name = "pigeon-broker"
 version = "0.1.0"
 edition = "2024"
 
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+
 [dependencies]
 actix-web = "4"
 env_logger = "0.10"
+sled = "0.34.7"
 tokio = { version = "1", features = ["full"] }
