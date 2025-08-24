@@ -62,7 +62,7 @@ async fn main() -> std::io::Result<()> {
             .service(kv_get)
             .service(kv_delete)
     })
-    .bind("127.0.0.1:8080")?
+    .bind("0.0.0.0:8080")?
     .run()
     .await
 }
